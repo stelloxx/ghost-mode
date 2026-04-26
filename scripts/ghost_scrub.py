@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ghost_registry import WORKSPACE, load_registry
+from ghost_registry import WORKSPACE, OPENCLAW_HOME, load_registry, validate_path, validate_session_id
 
 MEMORY_DIR = WORKSPACE / "memory"
 SEMANTIC_DIR = MEMORY_DIR / "semantic"
@@ -211,6 +211,7 @@ def scrub_memory_md(ghost_start, ghost_end, session_ids):
 
 def scrub_session(session_id):
     """Run full scrub pipeline for a session."""
+    validate_session_id(session_id)
     registry = load_registry()
     entry = registry["sessions"].get(session_id)
     if not entry:

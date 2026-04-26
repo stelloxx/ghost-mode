@@ -12,9 +12,11 @@ from pathlib import Path
 
 from ghost_registry import (
     WORKSPACE,
+    OPENCLAW_HOME,
     load_registry,
     save_registry,
     update_status,
+    validate_path,
 )
 
 OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw"))
@@ -25,6 +27,9 @@ ARCHIVE_BASE = OPENCLAW_HOME / "ghost-archive"
 
 def find_session_files(session_id):
     """Find all JSONL and checkpoint files for a session."""
+    # Validate session_id to prevent path traversal
+    if "/" in session_id or "\\" in session_id or ".." in session_id:
+        raise ValueError(f"Invalid session ID: {session_id}")
     files = []
 
     # Primary JSONL

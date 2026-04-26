@@ -8,7 +8,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from ghost_registry import OPENCLAW_HOME, load_registry
+from ghost_registry import OPENCLAW_HOME, load_registry, validate_path
 
 DB_PATH = OPENCLAW_HOME / "data" / "memory.db"
 

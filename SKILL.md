@@ -1,6 +1,21 @@
 ---
 name: ghost-mode
 description: Browser-style incognito mode for your OpenClaw agent. Activate to pause all memory writes — when you deactivate, every trace of the session is securely scrubbed from logs, memory files, session transcripts, and search indexes. Like closing an incognito window: nothing persists. Any files or local outputs you independently create during the session remain untouched. Use when user says "ghost on", "ghost off", "incognito", "private mode", "privacy mode", or wants a conversation that leaves no persistent trace in agent memory.
+metadata:
+  openclaw:
+    requires:
+      env:
+        - name: OPENCLAW_WORKSPACE
+          default: ~/.openclaw/workspace
+          description: Path to the OpenClaw workspace directory. All memory and registry files are stored here.
+        - name: OPENCLAW_HOME
+          default: ~/.openclaw
+          description: Path to the OpenClaw home directory. Session files and archive are stored under agents/ and ghost-archive/ here.
+        - name: OPENCLAW_AGENT
+          default: main
+          description: Agent directory name under OPENCLAW_HOME/agents/. Used to locate session JSONL and checkpoint files.
+      bins:
+        - python3
 ---
 
 # Ghost Mode
@@ -189,7 +204,7 @@ $ ./scripts/ghost_mode.sh off --dry-run
 [ghost DRY-RUN] Would secure-delete 3 archived file(s)
 ```
 
-- **Configurable default**: Set `"dry_run_by_default": true` in `ghost-mode-config.json` to make `ghost off` always start in dry-run mode. You must then pass `--dry-run=false` to execute for real.
+- **Configurable default**: `dry_run_by_default` is `true` by default — `ghost off` starts in dry-run mode. Pass `--yes` to execute for real. Set `"dry_run_by_default": false` in config to disable this safety default.
 
 ### Configuration File
 
@@ -198,14 +213,14 @@ Create `ghost-mode-config.json` in your workspace root (`~/.openclaw/workspace/g
 ```json
 {
   "confirm_before_delete": true,
-  "dry_run_by_default": false
+  "dry_run_by_default": true
 }
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `confirm_before_delete` | `true` | Require typing `yes` before any destructive operation. Set `false` to disable prompts. |
-| `dry_run_by_default` | `false` | If `true`, `ghost off` and `force-cleanup-all` default to dry-run mode. Override with `--dry-run=false`. |
+| `dry_run_by_default` | `true` | If `true` (default), `ghost off` and `force-cleanup-all` start in dry-run mode. Pass `--yes` to execute for real. Set `false` to skip dry-run by default. |
 
 ## What This Skill Touches
 
@@ -273,7 +288,7 @@ This warning must be shown **once** after installation. To prevent repeated warn
 ```json
 {
   "confirm_before_delete": true,
-  "dry_run_by_default": false
+  "dry_run_by_default": true
 }
 ```
 
@@ -329,6 +344,14 @@ These are **optional** — the primary workflow is manual `ghost on` / `ghost of
 - **OpenClaw workspace** — defaults to `~/.openclaw/workspace/`, configurable via `OPENCLAW_WORKSPACE` env var
 - **No external dependencies** — no pip packages, no API keys, no cloud services, no network calls
 
+### Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|--------|
+| `OPENCLAW_WORKSPACE` | `~/.openclaw/workspace` | Path to the OpenClaw workspace directory. All memory and registry files are stored here. |
+| `OPENCLAW_HOME` | `~/.openclaw` | Path to the OpenClaw home directory. Session files and archive are stored under `agents/` and `ghost-archive/` here. |
+| `OPENCLAW_AGENT` | `main` | Agent directory name under `OPENCLAW_HOME/agents/`. Used to locate session JSONL and checkpoint files. |
+
 ## Security Model
 
 **Intentionally destructive.** Ghost mode exists to remove data. This is the core purpose, not a side effect. **Multiple safety interlocks prevent accidental deletion.**
@@ -342,15 +365,20 @@ These are **optional** — the primary workflow is manual `ghost on` / `ghost of
 | Confirmation prompt | `ghost off` and `force-cleanup-all` require interactive `yes` confirmation by default. Disable with config or `--yes` flag |
 | Dry-run mode | `--dry-run` shows what would be deleted without making any changes. Configurable as default via `dry_run_by_default` |
 | User-triggered only | No automatic hooks. No passive collection. No daemons. Acts only when you run `ghost on`, `ghost off`, or `force-cleanup-all` |
+| Path validation | All file operations validate paths are within `OPENCLAW_WORKSPACE` or `OPENCLAW_HOME`. Session IDs are checked for path traversal. Operations outside these boundaries are rejected |
 | Local only | No network calls. No API keys. No cloud services. Everything runs on your machine |
 
 **What's out of scope:** Gateway logs, OS process traces, third-party service logs. Ghost mode cleans what the agent controls — your workspace.
 
 ## Limitations
 
-- The agent must read the `.ghost-mode` flag at session start. If you activate ghost mode mid-session, the agent won't suppress writes until the next session.
+- **Ghost mode is cooperative, not enforced at the OS level.** The `.ghost-mode` flag tells a *cooperating agent* to suppress memory writes. It cannot prevent other processes, scripts, or non-compliant agents from writing to the workspace. If you use tools or scripts that bypass the agent (e.g., direct file edits, cron jobs that write to memory files), those writes will still happen during a ghost session. The flag is a coordination mechanism — it works when the agent reads and respects it, which is the standard OpenClaw behavior documented in the AGENTS.md integration above.
+
 - The OpenClaw gateway logs requests independently. Ghost mode cannot remove gateway logs.
+
 - If the agent crashes before `ghost off`, the flag persists. The next session will detect it. Run `force-cleanup-all` to clean up sessions stale for >24 hours.
+
+- **Scrubbing uses timestamp and filename heuristics.** The scrubber matches ghost-window entries by mtime and embedded timestamps. If your workspace layout or timestamp formats differ from standard OpenClaw conventions, the scrubber may miss some entries or — in edge cases — remove content from non-ghost sessions that falls within the same time window. Always run `--dry-run` first to preview what will be affected.
 
 ## Disclaimer
 

@@ -47,7 +47,7 @@ dry_run_log() { echo -e "${CYAN}[ghost DRY-RUN]${NC} $*"; }
 # Reads ghost-mode-config.json from the workspace.
 # {
 #   "confirm_before_delete": true,   # require interactive confirmation
-#   "dry_run_by_default": false      # if true, `ghost off` defaults to dry-run
+#   "dry_run_by_default": true      # if true, `ghost off` defaults to dry-run
 # }
 ensure_config() {
     # Create default config on first use if it doesn't exist
@@ -56,7 +56,7 @@ ensure_config() {
         cat > "$CONFIG_FILE" <<'EOF'
 {
   "confirm_before_delete": true,
-  "dry_run_by_default": false
+  "dry_run_by_default": true
 }
 EOF
         log "Created default config at $CONFIG_FILE (confirm_before_delete: true)"
@@ -281,11 +281,11 @@ cmd_off() {
 
     # Check dry_run_by_default config
     local default_dry
-    default_dry=$(get_config_bool "dry_run_by_default" "false")
+    default_dry=$(get_config_bool "dry_run_by_default" "true")
     if [ "$default_dry" = "true" ] && [ "$dry_run" = "false" ]; then
         dry_run=true
         dry_run_log "dry_run_by_default is enabled in config — running in dry-run mode"
-        dry_run_log "Use --dry-run=false to override and run for real"
+        dry_run_log "Use --yes to override and run for real"
     fi
 
     if [ ! -f "$FLAG_FILE" ]; then
@@ -386,7 +386,7 @@ cmd_status() {
     else
         echo "  (no config file — using defaults)"
         echo "  confirm_before_delete: true (requires confirmation before delete)"
-        echo "  dry_run_by_default: false (operations execute for real)"
+        echo "  dry_run_by_default: true (ghost off defaults to dry-run, use --yes to execute)"
     fi
 }
 
@@ -419,7 +419,7 @@ cmd_force_cleanup() {
 
     # Check dry_run_by_default config
     local default_dry
-    default_dry=$(get_config_bool "dry_run_by_default" "false")
+    default_dry=$(get_config_bool "dry_run_by_default" "true")
     if [ "$default_dry" = "true" ] && [ "$dry_run" = "false" ]; then
         dry_run=true
         dry_run_log "dry_run_by_default is enabled in config — running in dry-run mode"
@@ -529,7 +529,7 @@ case "${1:-help}" in
         echo "Configuration (ghost-mode-config.json in workspace root):"
         echo "  {"
         echo "    \"confirm_before_delete\": true,   // Require 'yes' confirmation before deleting"
-        echo "    \"dry_run_by_default\": false       // If true, 'ghost off' defaults to dry-run"
+        echo "    \"dry_run_by_default\": true     // If true (default), 'ghost off' defaults to dry-run; pass --yes to execute"
         echo "  }"
         echo ""
         echo "Environment variables:"

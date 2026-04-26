@@ -14,6 +14,25 @@ from pathlib import Path
 WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", Path.home() / ".openclaw" / "workspace"))
 REGISTRY_PATH = WORKSPACE / "memory" / ".ghost-sessions.json"
 FLAG_PATH = WORKSPACE / "memory" / ".ghost-mode"
+OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw"))
+
+# Path validation: ensure critical directories exist within expected workspace structure
+ALLOWED_PREFIXES = [str(WORKSPACE), str(OPENCLAW_HOME)]
+
+
+def validate_path(path):
+    """Validate that a path is within allowed workspace directories."""
+    resolved = str(Path(path).resolve())
+    if not any(resolved.startswith(p) for p in ALLOWED_PREFIXES):
+        raise ValueError(f"Path {path} is outside allowed workspace directories")
+    return Path(path)
+
+
+def validate_session_id(session_id):
+    """Validate session ID to prevent path traversal attacks."""
+    if not session_id or "/" in session_id or "\\" in session_id or ".." in session_id:
+        raise ValueError(f"Invalid session ID: {session_id}")
+    return session_id
 
 VALID_STATUSES = ["active", "completed", "archived", "scrubbed", "verified"]
 

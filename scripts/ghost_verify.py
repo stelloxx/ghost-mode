@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from ghost_registry import WORKSPACE, OPENCLAW_HOME, load_registry
+from ghost_registry import WORKSPACE, OPENCLAW_HOME, load_registry, validate_path
 
 AGENT_DIR = os.environ.get("OPENCLAW_AGENT", "main")
 SESSIONS_DIR = OPENCLAW_HOME / "agents" / AGENT_DIR / "sessions"
