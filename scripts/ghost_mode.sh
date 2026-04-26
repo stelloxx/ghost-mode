@@ -4,11 +4,12 @@
 #
 # Usage:
 #   ghost_mode.sh on [--session-key <key>]   # Activate ghost mode
-#   ghost_mode.sh off                         # Deactivate and run pipeline
+#   ghost_mode.sh off [--dry-run]             # Deactivate and run pipeline
 #   ghost_mode.sh status                      # Show current status
 #   ghost_mode.sh archive-completed           # Archive all active sessions
 #   ghost_mode.sh verify-pending              # Verify all scrubbed sessions
-#   ghost_mode.sh force-cleanup-all            # Force cleanup stale sessions (>24h)
+#   ghost_mode.sh force-cleanup-all [--dry-run]  # Force cleanup stale sessions (>24h)
+#   ghost_mode.sh show-warning                # Show the one-time data loss warning
 
 set -euo pipefail
 
@@ -17,6 +18,7 @@ WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
 FLAG_FILE="$WORKSPACE/memory/.ghost-mode"
 REGISTRY="$WORKSPACE/memory/.ghost-sessions.json"
 WARNING_FILE="$WORKSPACE/memory/.ghost-mode-warning-shown"
+CONFIG_FILE="$WORKSPACE/ghost-mode-config.json"
 
 # Add scripts dir to Python path
 export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
@@ -26,18 +28,80 @@ if [ -t 1 ]; then
     RED='\033[0;31m'
     GREEN='\033[0;32m'
     YELLOW='\033[0;33m'
+    CYAN='\033[0;36m'
     NC='\033[0m'
 else
     RED=''
     GREEN=''
     YELLOW=''
+    CYAN=''
     NC=''
 fi
 
 log() { echo -e "${GREEN}[ghost]${NC} $*"; }
 warn() { echo -e "${YELLOW}[ghost]${NC} $*" >&2; }
 err() { echo -e "${RED}[ghost]${NC} $*" >&2; }
+dry_run_log() { echo -e "${CYAN}[ghost DRY-RUN]${NC} $*"; }
 
+# ── Config ──────────────────────────────────────────────────────────
+# Reads ghost-mode-config.json from the workspace.
+# {
+#   "confirm_before_delete": true,   # require interactive confirmation
+#   "dry_run_by_default": false      # if true, `ghost off` defaults to dry-run
+# }
+load_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        python3 -c "
+import json, sys
+with open('$CONFIG_FILE') as f:
+    cfg = json.load(f)
+print(json.dumps(cfg))
+" 2>/dev/null || echo '{}'
+    else
+        echo '{}'
+    fi
+}
+
+get_config_bool() {
+    local key="$1"
+    local default="${2:-false}"
+    local val
+    val=$(load_config | python3 -c "
+import json, sys
+cfg = json.load(sys.stdin)
+print(str(cfg.get('$key', $default)).lower())
+" 2>/dev/null || echo "$default")
+    echo "$val"
+}
+
+# ── Confirmation ────────────────────────────────────────────────────
+confirm_delete() {
+    # Check config: if confirm_before_delete is false, skip confirmation
+    local require_confirm
+    require_confirm=$(get_config_bool "confirm_before_delete" "true")
+    if [ "$require_confirm" = "false" ]; then
+        return 0
+    fi
+
+    # If not a terminal, we can't prompt — fail safe by requiring --yes
+    if [ ! -t 0 ]; then
+        err "Confirmation required but no terminal available. Use --yes to skip confirmation."
+        return 1
+    fi
+
+    echo -e "${RED}⚠️  You are about to permanently delete session data.${NC}"
+    echo -e "${RED}   This action is IRREVERSIBLE. Deleted data cannot be recovered.${NC}"
+    echo ""
+    echo -e "  Type ${YELLOW}yes${NC} to confirm, or anything else to cancel:"
+    read -r response
+    if [ "$response" != "yes" ]; then
+        log "Operation cancelled."
+        return 1
+    fi
+    return 0
+}
+
+# ── Helpers ──────────────────────────────────────────────────────────
 require_cmd() {
     if ! command -v "$1" &>/dev/null; then
         err "Required command not found: $1"
@@ -53,6 +117,10 @@ secure_delete() {
         warn "shred not available, using rm (less secure): $1"
         rm -f "$1"
     fi
+}
+
+secure_delete_dry_run() {
+    dry_run_log "Would secure-delete: $1"
 }
 
 check_warning() {
@@ -92,6 +160,46 @@ ensure_registry() {
     fi
 }
 
+# ── Dry-run helpers ──────────────────────────────────────────────────
+dry_run_archive() {
+    local session_id="$1"
+    dry_run_log "Would archive session files for: $session_id"
+    dry_run_log "  Would copy session JSONL + checkpoints to ~/.openclaw/ghost-archive/"
+    dry_run_log "  Would remove originals from sessions directory"
+}
+
+dry_run_scrub() {
+    local session_id="$1"
+    dry_run_log "Would scrub memory files for session: $session_id"
+    dry_run_log "  Would remove ghost-window entries from: memory/*.md"
+    dry_run_log "  Would remove ghost-window entries from: memory/semantic/*.md"
+    dry_run_log "  Would remove ghost-window entries from: memory/episodic/*.md"
+    dry_run_log "  Would remove promoted ghost entries from: MEMORY.md"
+}
+
+dry_run_index_cleanup() {
+    local session_id="$1"
+    dry_run_log "Would remove index entries for session: $session_id"
+    dry_run_log "  Would DELETE rows from memory.db matching session ID"
+}
+
+dry_run_verify() {
+    local session_id="$1"
+    dry_run_log "Would run 7-layer verification for session: $session_id"
+}
+
+dry_run_shred() {
+    local archive_dir="$1"
+    if [ -d "$archive_dir" ]; then
+        local count
+        count=$(find "$archive_dir" -type f | wc -l)
+        dry_run_log "Would secure-delete $count archived file(s) in: $archive_dir"
+    else
+        dry_run_log "No archive directory found at $archive_dir (nothing to shred)"
+    fi
+}
+
+# ── Commands ─────────────────────────────────────────────────────────
 cmd_on() {
     check_warning
     require_cmd python3
@@ -143,6 +251,28 @@ cmd_off() {
     check_warning
     require_cmd python3
 
+    local dry_run=false
+    local skip_confirm=false
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run) dry_run=true ;;
+            --yes|-y) skip_confirm=true ;;
+            *) ;;
+        esac
+        shift
+    done
+
+    # Check dry_run_by_default config
+    local default_dry
+    default_dry=$(get_config_bool "dry_run_by_default" "false")
+    if [ "$default_dry" = "true" ] && [ "$dry_run" = "false" ]; then
+        dry_run=true
+        dry_run_log "dry_run_by_default is enabled in config — running in dry-run mode"
+        dry_run_log "Use --dry-run=false to override and run for real"
+    fi
+
     if [ ! -f "$FLAG_FILE" ]; then
         warn "Ghost mode is not active"
         return 0
@@ -151,6 +281,29 @@ cmd_off() {
     # Read flag before removing
     local session_id
     session_id=$(python3 -c "import json; print(json.load(open('$FLAG_FILE')).get('sessionId', 'unknown'))")
+
+    # ── Dry-run path ─────────────────────────────────────────────
+    if [ "$dry_run" = "true" ]; then
+        dry_run_log "=== DRY RUN — no changes will be made ==="
+        dry_run_log "Session: $session_id"
+        echo ""
+        dry_run_archive "$session_id"
+        dry_run_scrub "$session_id"
+        dry_run_index_cleanup "$session_id"
+        dry_run_verify "$session_id"
+        dry_run_shred "$HOME/.openclaw/ghost-archive"
+        echo ""
+        dry_run_log "=== END DRY RUN ==="
+        dry_run_log "Run 'ghost_mode.sh off' (without --dry-run) to execute these operations."
+        return 0
+    fi
+
+    # ── Confirmation ──────────────────────────────────────────────
+    if [ "$skip_confirm" = "false" ]; then
+        if ! confirm_delete; then
+            return 1
+        fi
+    fi
 
     # Remove flag
     rm -f "$FLAG_FILE"
@@ -209,6 +362,17 @@ cmd_status() {
     echo ""
     log "Registry:"
     python3 "$SCRIPT_DIR/ghost_registry.py" list
+
+    # Show config
+    echo ""
+    log "Config:"
+    if [ -f "$CONFIG_FILE" ]; then
+        cat "$CONFIG_FILE"
+    else
+        echo "  (no config file — using defaults)"
+        echo "  confirm_before_delete: true (requires confirmation before delete)"
+        echo "  dry_run_by_default: false (operations execute for real)"
+    fi
 }
 
 cmd_archive_completed() {
@@ -224,6 +388,27 @@ cmd_verify_pending() {
 cmd_force_cleanup() {
     require_cmd python3
 
+    local dry_run=false
+    local skip_confirm=false
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run) dry_run=true ;;
+            --yes|-y) skip_confirm=true ;;
+            *) ;;
+        esac
+        shift
+    done
+
+    # Check dry_run_by_default config
+    local default_dry
+    default_dry=$(get_config_bool "dry_run_by_default" "false")
+    if [ "$default_dry" = "true" ] && [ "$dry_run" = "false" ]; then
+        dry_run=true
+        dry_run_log "dry_run_by_default is enabled in config — running in dry-run mode"
+    fi
+
     log "Force cleanup: processing stale sessions..."
 
     # Get stale sessions
@@ -233,6 +418,28 @@ cmd_force_cleanup() {
     if [ "$stale" = "[]" ] || [ -z "$stale" ]; then
         log "No stale sessions found"
         return 0
+    fi
+
+    # ── Dry-run path ─────────────────────────────────────────────
+    if [ "$dry_run" = "true" ]; then
+        dry_run_log "=== DRY RUN — no changes will be made ==="
+        echo "$stale" | python3 -c "
+import json, sys
+sessions = json.load(sys.stdin)
+for s in sessions:
+    print(f'  Would clean up stale session: {s[\"sessionId\"]} (age: {s.get(\"activatedAt\",\"unknown\")})')
+print(f'  Total stale sessions: {len(sessions)}')
+"
+        dry_run_log "=== END DRY RUN ==="
+        dry_run_log "Run 'ghost_mode.sh force-cleanup-all' (without --dry-run) to execute."
+        return 0
+    fi
+
+    # ── Confirmation ──────────────────────────────────────────────
+    if [ "$skip_confirm" = "false" ]; then
+        if ! confirm_delete; then
+            return 1
+        fi
     fi
 
     # Process each stale session
@@ -262,7 +469,8 @@ case "${1:-help}" in
         cmd_on "$@"
         ;;
     off)
-        cmd_off
+        shift
+        cmd_off "$@"
         ;;
     status)
         cmd_status
@@ -277,10 +485,8 @@ case "${1:-help}" in
         cmd_verify_pending
         ;;
     force-cleanup-all)
-        cmd_force_cleanup
-        ;;
-    show-warning)
-        check_warning
+        shift
+        cmd_force_cleanup "$@"
         ;;
     help|*)
         echo "Ghost Mode — Privacy mode for OpenClaw sessions"
@@ -292,12 +498,23 @@ case "${1:-help}" in
         echo ""
         echo "Commands:"
         echo "  on [--session-key <key>]    Activate ghost mode"
-        echo "  off                         Deactivate and scrub session data"
-        echo "  status                      Show current ghost mode status"
-        echo "  show-warning                Show the one-time data loss warning"
-        echo "  archive-completed           Archive all active sessions"
-        echo "  verify-pending              Verify all scrubbed sessions"
-        echo "  force-cleanup-all           Force cleanup stale sessions (>24h)"
+        echo "  off [--dry-run] [--yes]     Deactivate and scrub session data"
+        echo "  status                       Show current ghost mode status and config"
+        echo "  show-warning                 Show the one-time data loss warning"
+        echo "  archive-completed            Archive all active sessions"
+        echo "  verify-pending               Verify all scrubbed sessions"
+        echo "  force-cleanup-all [--dry-run] [--yes]"
+        echo "                               Force cleanup stale sessions (>24h)"
+        echo ""
+        echo "Options:"
+        echo "  --dry-run    Show what would be deleted without making any changes"
+        echo "  --yes, -y    Skip confirmation prompt (for scripted use)"
+        echo ""
+        echo "Configuration (ghost-mode-config.json in workspace root):"
+        echo "  {"
+        echo "    \"confirm_before_delete\": true,   // Require 'yes' confirmation before deleting"
+        echo "    \"dry_run_by_default\": false       // If true, 'ghost off' defaults to dry-run"
+        echo "  }"
         echo ""
         echo "Environment variables:"
         echo "  OPENCLAW_WORKSPACE          Path to OpenClaw workspace (default: ~/.openclaw/workspace)"

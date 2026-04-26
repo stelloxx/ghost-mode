@@ -133,15 +133,79 @@ Each stage is idempotent — re-running is safe and produces the same result.
 # Activate (the agent will also do this when you say "ghost on")
 ./scripts/ghost_mode.sh on --session-key <key>
 
-# Deactivate and scrub
+# Preview what would be deleted (no changes made)
+./scripts/ghost_mode.sh off --dry-run
+
+# Deactivate and scrub (with confirmation prompt)
 ./scripts/ghost_mode.sh off
 
-# Check status
+# Skip confirmation prompt (for scripted/automated use)
+./scripts/ghost_mode.sh off --yes
+
+# Check status (includes config)
 ./scripts/ghost_mode.sh status
 
 # Force cleanup of stale sessions older than 24 hours
 ./scripts/ghost_mode.sh force-cleanup-all
 ```
+
+## Safety Interlocks
+
+Ghost Mode includes two safety mechanisms to prevent accidental data loss:
+
+### 1. Confirmation Prompt
+
+By default, `ghost off` and `force-cleanup-all` require interactive confirmation before deleting anything. You must type `yes` to proceed.
+
+```bash
+$ ./scripts/ghost_mode.sh off
+⚠️  You are about to permanently delete session data.
+   This action is IRREVERSIBLE. Deleted data cannot be recovered.
+
+  Type yes to confirm, or anything else to cancel:
+```
+
+- **Configurable**: Set `"confirm_before_delete": false` in `ghost-mode-config.json` to disable prompts.
+- **Non-interactive fallback**: If no terminal is available (e.g., cron, piped input), confirmation is required unless you pass `--yes` / `-y`.
+- **`--yes` / `-y` flag**: Skips the confirmation prompt entirely. Use in scripts, cron jobs, or automation.
+
+### 2. Dry-Run Mode
+
+Every destructive command supports `--dry-run` — shows exactly what would be deleted without making any changes:
+
+```bash
+$ ./scripts/ghost_mode.sh off --dry-run
+[ghost DRY-RUN] Would archive session files for: ghost-1745695449
+[ghost DRY-RUN]   Would copy session JSONL + checkpoints to ~/.openclaw/ghost-archive/
+[ghost DRY-RUN]   Would remove originals from sessions directory
+[ghost DRY-RUN] Would scrub memory files for session: ghost-1745695449
+[ghost DRY-RUN]   Would remove ghost-window entries from: memory/*.md
+[ghost DRY-RUN]   Would remove ghost-window entries from: memory/semantic/*.md
+[ghost DRY-RUN]   Would remove ghost-window entries from: memory/episodic/*.md
+[ghost DRY-RUN]   Would remove promoted ghost entries from: MEMORY.md
+[ghost DRY-RUN] Would remove index entries for session: ghost-1745695449
+[ghost DRY-RUN]   Would DELETE rows from memory.db matching session ID
+[ghost DRY-RUN] Would run 7-layer verification for session: ghost-1745695449
+[ghost DRY-RUN] Would secure-delete 3 archived file(s)
+```
+
+- **Configurable default**: Set `"dry_run_by_default": true` in `ghost-mode-config.json` to make `ghost off` always start in dry-run mode. You must then pass `--dry-run=false` to execute for real.
+
+### Configuration File
+
+Create `ghost-mode-config.json` in your workspace root (`~/.openclaw/workspace/ghost-mode-config.json`):
+
+```json
+{
+  "confirm_before_delete": true,
+  "dry_run_by_default": false
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `confirm_before_delete` | `true` | Require typing `yes` before any destructive operation. Set `false` to disable prompts. |
+| `dry_run_by_default` | `false` | If `true`, `ghost off` and `force-cleanup-all` default to dry-run mode. Override with `--dry-run=false`. |
 
 ## What This Skill Touches
 
@@ -177,7 +241,7 @@ All deletions are user-triggered. The skill only acts when you explicitly run `g
 
 ```
 scripts/
-├── ghost_mode.sh           # Main CLI entry point
+├── ghost_mode.sh           # Main CLI entry point (dry-run, confirm, config)
 ├── ghost_registry.py       # Session registry + state machine
 ├── ghost_archive.py        # Session file archival
 ├── ghost_scrub.py          # Memory file scrubbing
@@ -256,7 +320,7 @@ These are **optional** — the primary workflow is manual `ghost on` / `ghost of
 
 ## Security Model
 
-**Intentionally destructive.** Ghost mode exists to remove data. This is the core purpose, not a side effect.
+**Intentionally destructive.** Ghost mode exists to remove data. This is the core purpose, not a side effect. **Multiple safety interlocks prevent accidental deletion.**
 
 | Property | Detail |
 |----------|--------|
@@ -264,6 +328,8 @@ These are **optional** — the primary workflow is manual `ghost on` / `ghost of
 | Registry audit trail | Every state transition is timestamped. You can inspect `memory/.ghost-sessions.json` at any time |
 | 7-layer verification | Confirms: flag removed, registry correct, session files gone, checkpoints gone, daily logs clean, semantic files clean, index clean |
 | Atomic writes | All file modifications use write-to-`.tmp` then rename — no partial/corrupted state |
+| Confirmation prompt | `ghost off` and `force-cleanup-all` require interactive `yes` confirmation by default. Disable with config or `--yes` flag |
+| Dry-run mode | `--dry-run` shows what would be deleted without making any changes. Configurable as default via `dry_run_by_default` |
 | User-triggered only | No automatic hooks. No passive collection. No daemons. Acts only when you run `ghost on`, `ghost off`, or `force-cleanup-all` |
 | Local only | No network calls. No API keys. No cloud services. Everything runs on your machine |
 
