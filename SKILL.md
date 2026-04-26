@@ -5,17 +5,12 @@ metadata:
   openclaw:
     requires:
       env:
-        - name: OPENCLAW_WORKSPACE
-          default: ~/.openclaw/workspace
-          description: Path to the OpenClaw workspace directory. All memory and registry files are stored here.
-        - name: OPENCLAW_HOME
-          default: ~/.openclaw
-          description: Path to the OpenClaw home directory. Session files and archive are stored under agents/ and ghost-archive/ here.
-        - name: OPENCLAW_AGENT
-          default: main
-          description: Agent directory name under OPENCLAW_HOME/agents/. Used to locate session JSONL and checkpoint files.
+        - OPENCLAW_WORKSPACE
+        - OPENCLAW_HOME
+        - OPENCLAW_AGENT
       bins:
         - python3
+        - shred
 ---
 
 # Ghost Mode
@@ -64,11 +59,11 @@ Result: The agent's memory is untouched. The experimental refactoring was never 
 You: ghost on
 Agent: Ghost mode ON. This session will not be recorded.
 
-You: I need to share some confidential API keys with you so you can test the integration.
-Agent: [helps with integration, reads keys from environment, runs tests]
+You: I need to test the integration with the staging server using my dev credentials.
+Agent: [helps with integration, runs tests against staging]
 
 You: Thanks, that's done. ghost off
-Agent: Ghost mode OFF. Session scrubbed. No record of keys or this conversation remains in my memory.
+Agent: Ghost mode OFF. Session scrubbed. No record of credentials or this conversation remains in my memory.
 ```
 
 Result: Credentials were used during the session but never written to daily logs, memory files, or session archives. The agent won't reference them later.
