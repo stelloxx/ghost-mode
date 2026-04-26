@@ -49,6 +49,20 @@ dry_run_log() { echo -e "${CYAN}[ghost DRY-RUN]${NC} $*"; }
 #   "confirm_before_delete": true,   # require interactive confirmation
 #   "dry_run_by_default": false      # if true, `ghost off` defaults to dry-run
 # }
+ensure_config() {
+    # Create default config on first use if it doesn't exist
+    if [ ! -f "$CONFIG_FILE" ]; then
+        mkdir -p "$(dirname "$CONFIG_FILE")"
+        cat > "$CONFIG_FILE" <<'EOF'
+{
+  "confirm_before_delete": true,
+  "dry_run_by_default": false
+}
+EOF
+        log "Created default config at $CONFIG_FILE (confirm_before_delete: true)"
+    fi
+}
+
 load_config() {
     if [ -f "$CONFIG_FILE" ]; then
         python3 -c "
@@ -249,6 +263,7 @@ with open('$FLAG_FILE', 'w') as f:
 
 cmd_off() {
     check_warning
+    ensure_config
     require_cmd python3
 
     local dry_run=false
@@ -387,6 +402,7 @@ cmd_verify_pending() {
 
 cmd_force_cleanup() {
     require_cmd python3
+    ensure_config
 
     local dry_run=false
     local skip_confirm=false

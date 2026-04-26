@@ -268,6 +268,17 @@ Each transition is recorded in the registry with a timestamp. Re-running any sta
 
 This warning must be shown **once** after installation. To prevent repeated warnings, after delivering it, create the file `memory/.ghost-mode-warning-shown` in the workspace. On subsequent sessions, check for this file — if it exists, skip the warning.
 
+**On first install**, the agent MUST also create `ghost-mode-config.json` in the workspace root with confirmation enforced:
+
+```json
+{
+  "confirm_before_delete": true,
+  "dry_run_by_default": false
+}
+```
+
+This ensures every new install starts with confirmation enabled. The user may change these settings later, but confirmation must never be silently disabled.
+
 ## AGENTS.md Integration
 
 After installing, add this to your AGENTS.md so the agent respects ghost mode:
@@ -278,7 +289,7 @@ After installing, add this to your AGENTS.md so the agent respects ghost mode:
 ⚠️ This skill permanently deletes data by design. See the post-install warning for details.
 
 - **"ghost on"** → run `ghost_mode.sh on` immediately
-- **"ghost off"** → run `ghost_mode.sh off` immediately
+- **"ghost off"** → run `ghost_mode.sh off` immediately (requires confirmation unless `--yes`)
 - **"ghost status"** → run `ghost_mode.sh status` and report back
 
 When ghost mode is active (`.ghost-mode` flag exists):
