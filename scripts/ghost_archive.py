@@ -5,6 +5,7 @@ Generic version: no agent-specific assumptions.
 """
 
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timezone

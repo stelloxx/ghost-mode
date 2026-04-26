@@ -5,6 +5,8 @@ Generic version: no environment-specific assumptions.
 """
 
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -70,13 +72,39 @@ def verify_session(session_id):
         print(f"FAIL: {len(checkpoints)} checkpoint files still at original path", file=sys.stderr)
 
     # Layer 5: Daily logs contain no ghost-window entries
-    # (Simplified check — no timestamp matching, just verify scrub ran)
-    checks["daily_logs_clean"] = True  # Detailed check done by scrubber
-    print(f"INFO: Daily log scrubbing assumed complete (verified by scrubber)", file=sys.stderr)
+    daily_log_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}")
+    ghost_refs_in_logs = 0
+    for log_file in MEMORY_DIR.glob("*.md"):
+        if not daily_log_pattern.match(log_file.name):
+            continue
+        try:
+            content = log_file.read_text()
+            if session_id in content:
+                ghost_refs_in_logs += 1
+        except Exception:
+            pass
+    checks["daily_logs_clean"] = ghost_refs_in_logs == 0
+    if not checks["daily_logs_clean"]:
+        print(f"FAIL: {ghost_refs_in_logs} daily log files still contain references to session {session_id}", file=sys.stderr)
+    else:
+        print(f"OK: No session references found in daily logs", file=sys.stderr)
 
     # Layer 6: Semantic files contain no ghost-window entries
-    checks["semantic_files_clean"] = True  # Simplified — detailed check by scrubber
-    print(f"INFO: Semantic file scrubbing assumed complete (verified by scrubber)", file=sys.stderr)
+    semantic_dir = MEMORY_DIR / "semantic"
+    ghost_refs_in_semantic = 0
+    if semantic_dir.exists():
+        for sem_file in semantic_dir.glob("*.md"):
+            try:
+                content = sem_file.read_text()
+                if session_id in content:
+                    ghost_refs_in_semantic += 1
+            except Exception:
+                pass
+    checks["semantic_files_clean"] = ghost_refs_in_semantic == 0
+    if not checks["semantic_files_clean"]:
+        print(f"FAIL: {ghost_refs_in_semantic} semantic files still contain references to session {session_id}", file=sys.stderr)
+    else:
+        print(f"OK: No session references found in semantic files", file=sys.stderr)
 
     # Layer 7: Memory index contains no ghost paths
     db_path = OPENCLAW_HOME / "data" / "memory.db"

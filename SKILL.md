@@ -355,7 +355,7 @@ These are **optional** — the primary workflow is manual `ghost on` / `ghost of
 |----------|--------|
 | Deletion method | `shred -u` (secure overwrite, then remove). Falls back to `rm` with warning if `shred` unavailable |
 | Registry audit trail | Every state transition is timestamped. You can inspect `memory/.ghost-sessions.json` at any time |
-| 7-layer verification | Confirms: flag removed, registry correct, session files gone, checkpoints gone, daily logs clean, semantic files clean, index clean |
+| 7-layer verification | Confirms: flag removed, registry correct, session files gone, checkpoints gone, daily logs free of session references, semantic files free of session references, index clean |
 | Atomic writes | All file modifications use write-to-`.tmp` then rename — no partial/corrupted state |
 | Confirmation prompt | `ghost off` and `force-cleanup-all` require interactive `yes` confirmation by default. Disable with config or `--yes` flag |
 | Dry-run mode | `--dry-run` shows what would be deleted without making any changes. Configurable as default via `dry_run_by_default` |
