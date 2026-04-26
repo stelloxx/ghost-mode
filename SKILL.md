@@ -283,6 +283,12 @@ By installing or using this skill, you accept full responsibility for any outcom
 
 You are running a tool whose stated purpose is to permanently delete data. Use it carefully. Back up your workspace.
 
+## Source & Issues
+
+- **Repo:** https://github.com/stelloxx/ghost-mode
+- **Install:** `clawhub install ghost-mode`
+- **Report issues:** https://github.com/stelloxx/ghost-mode/issues
+
 ## License
 
-MIT
+MIT-0
