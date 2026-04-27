@@ -115,8 +115,8 @@ def verify_session(session_id):
             cursor = conn.cursor()
             # Check for any chunks referencing the ghost session
             cursor.execute(
-                "SELECT COUNT(*) FROM chunks WHERE file_path LIKE ?",
-                (f"%{session_id}%",),
+                "SELECT COUNT(*) FROM chunks WHERE file_path LIKE ? OR file_path LIKE ?",
+                (f"%/{session_id}.%", f"%/{session_id}/%"),
             )
             count = cursor.fetchone()[0]
             conn.close()
@@ -124,8 +124,8 @@ def verify_session(session_id):
             if not checks["index_clean"]:
                 print(f"FAIL: {count} index entries still reference session {session_id}", file=sys.stderr)
         except Exception as e:
-            print(f"WARN: Could not check memory index: {e}", file=sys.stderr)
-            checks["index_clean"] = True  # Don't fail on DB errors
+            print(f"FAIL: Could not verify memory index (DB error): {e}", file=sys.stderr)
+            checks["index_clean"] = False  # DB errors must not silently pass verification
     else:
         checks["index_clean"] = True  # No index to check
         print("INFO: No memory index found, skipping index check", file=sys.stderr)

@@ -40,17 +40,23 @@ def cleanup_index(session_ids=None):
         cursor = conn.cursor()
 
         for session_id in session_ids:
-            # Find and remove chunks that reference the ghost session
+            # Match only paths where session_id is a complete path component:
+            # - %/<session_id>.% covers session JSONL files and variants
+            # - %/<session_id>/% covers anything inside a session-named directory
+            # This avoids false positives if the UUID appears as a substring
+            # elsewhere in an unrelated file path.
+            path_as_file = f"%/{session_id}.%"
+            path_as_dir = f"%/{session_id}/%"
             cursor.execute(
-                "SELECT COUNT(*) FROM chunks WHERE file_path LIKE ?",
-                (f"%{session_id}%",),
+                "SELECT COUNT(*) FROM chunks WHERE file_path LIKE ? OR file_path LIKE ?",
+                (path_as_file, path_as_dir),
             )
             count = cursor.fetchone()[0]
 
             if count > 0:
                 cursor.execute(
-                    "DELETE FROM chunks WHERE file_path LIKE ?",
-                    (f"%{session_id}%",),
+                    "DELETE FROM chunks WHERE file_path LIKE ? OR file_path LIKE ?",
+                    (path_as_file, path_as_dir),
                 )
                 print(f"Removed {count} index entries for session {session_id}", file=sys.stderr)
                 total_removed += count
