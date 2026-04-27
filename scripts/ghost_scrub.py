@@ -100,66 +100,94 @@ def scrub_daily_logs(ghost_start, ghost_end):
     return scrubbed
 
 
-def scrub_file_by_mtime(file_path, ghost_start, ghost_end):
-    """Scrub entries from a memory file based on mtime and content timestamps."""
-    validate_path(file_path)
-    mtime = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
+def scrub_file_by_session(file_path, session_ids, ghost_start, ghost_end):
+    """Scrub ghost session entries from a memory file.
 
-    # Only scrub if the file was modified during the ghost window
-    if not (ghost_start <= mtime <= ghost_end):
-        return False
+    Strategy — two-tier matching to reduce cross-session collateral:
+
+    1. Primary (session ID anchor): any line explicitly referencing a known
+       ghost session ID is removed. This is precise and does not rely on
+       timing heuristics.
+
+    2. Secondary (mtime + timestamp heuristic): only applied when the file's
+       mtime falls within the ghost window, meaning it was written during the
+       ghost session. Lines whose embedded timestamps fall in the window are
+       also removed. This catches entries that don't carry session ID
+       citations (e.g. raw timestamped log lines).
+
+    Files with no session ID references AND mtime outside the ghost window
+    are skipped entirely, preventing accidental scrubbing of content from
+    other sessions that share the same files.
+    """
+    validate_path(file_path)
 
     with open(file_path) as f:
         content = f.read()
 
-    # Check for ghost session ID references in content
-    # This handles promoted entries with source citations
-    original_len = len(content)
+    # Check if file has any explicit session ID references (primary signal)
+    has_session_refs = any(sid in content for sid in session_ids)
 
-    # Remove lines containing ghost-window timestamps
+    # Check mtime (secondary signal — only used if file was written in window)
+    mtime = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
+    modified_in_window = ghost_start <= mtime <= ghost_end
+
+    if not has_session_refs and not modified_in_window:
+        # No connection to this ghost session — skip without touching the file
+        return False
+
+    original_len = len(content)
     lines = content.split("\n")
     new_lines = []
+
     for line in lines:
-        ts_matches = re.findall(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}", line)
-        in_window = any(is_in_ghost_window(ts, ghost_start, ghost_end) for ts in ts_matches)
-        if not in_window:
-            new_lines.append(line)
+        # Primary: remove lines with explicit session ID references
+        if any(sid in line for sid in session_ids):
+            continue
+
+        # Secondary: remove lines with timestamps in the ghost window,
+        # but only when the file itself was written during the ghost session
+        if modified_in_window:
+            ts_matches = re.findall(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}", line)
+            if ts_matches and any(is_in_ghost_window(ts, ghost_start, ghost_end) for ts in ts_matches):
+                continue
+
+        new_lines.append(line)
 
     new_content = "\n".join(new_lines)
 
     if len(new_content) < original_len:
-        # Atomic write
         tmp = file_path.with_suffix(".tmp")
         with open(tmp, "w") as f:
             f.write(new_content)
         tmp.rename(file_path)
-        print(f"Scrubbed: {file_path.name}", file=sys.stderr)
+        removed = original_len - len(new_content)
+        print(f"Scrubbed: {file_path.name} ({removed} chars removed)", file=sys.stderr)
         return True
 
     return False
 
 
-def scrub_semantic_files(ghost_start, ghost_end):
+def scrub_semantic_files(session_ids, ghost_start, ghost_end):
     """Scrub ghost-window entries from semantic memory files."""
     scrubbed = 0
     if not SEMANTIC_DIR.exists():
         return scrubbed
 
     for f in SEMANTIC_DIR.glob("*.md"):
-        if scrub_file_by_mtime(f, ghost_start, ghost_end):
+        if scrub_file_by_session(f, session_ids, ghost_start, ghost_end):
             scrubbed += 1
 
     return scrubbed
 
 
-def scrub_episodic_files(ghost_start, ghost_end):
+def scrub_episodic_files(session_ids, ghost_start, ghost_end):
     """Scrub ghost-window entries from episodic memory files."""
     scrubbed = 0
     if not EPISODIC_DIR.exists():
         return scrubbed
 
     for f in EPISODIC_DIR.glob("*.md"):
-        if scrub_file_by_mtime(f, ghost_start, ghost_end):
+        if scrub_file_by_session(f, session_ids, ghost_start, ghost_end):
             scrubbed += 1
 
     return scrubbed
@@ -235,8 +263,8 @@ def scrub_session(session_id):
     print(f"Scrubbing session {session_id} (window: {ghost_start} to {ghost_end})", file=sys.stderr)
 
     daily = scrub_daily_logs(ghost_start, ghost_end)
-    semantic = scrub_semantic_files(ghost_start, ghost_end)
-    episodic = scrub_episodic_files(ghost_start, ghost_end)
+    semantic = scrub_semantic_files([session_id], ghost_start, ghost_end)
+    episodic = scrub_episodic_files([session_id], ghost_start, ghost_end)
     memory_md = scrub_memory_md(ghost_start, ghost_end, [session_id])
 
     from ghost_registry import update_status
