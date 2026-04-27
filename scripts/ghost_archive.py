@@ -18,6 +18,7 @@ from ghost_registry import (
     save_registry,
     update_status,
     validate_path,
+    validate_session_id,
 )
 
 OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw"))
@@ -28,9 +29,7 @@ ARCHIVE_BASE = OPENCLAW_HOME / "ghost-archive"
 
 def find_session_files(session_id):
     """Find all JSONL and checkpoint files for a session."""
-    # Validate session_id to prevent path traversal
-    if "/" in session_id or "\\" in session_id or ".." in session_id:
-        raise ValueError(f"Invalid session ID: {session_id}")
+    validate_session_id(session_id)
     files = []
 
     # Primary JSONL
@@ -71,6 +70,7 @@ def archive_session(session_id, archive_mode="full"):
     # Create archive directory
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     archive_dir = ARCHIVE_BASE / date_str / session_id
+    validate_path(archive_dir)
     archive_dir.mkdir(parents=True, exist_ok=True)
 
     for file_type, src_path in files:

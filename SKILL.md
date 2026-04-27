@@ -1,16 +1,22 @@
 ---
 name: ghost-mode
 description: Browser-style incognito mode for your OpenClaw agent. Activate to pause all memory writes — when you deactivate, every trace of the session is securely scrubbed from logs, memory files, session transcripts, and search indexes. Like closing an incognito window: nothing persists. Any files or local outputs you independently create during the session remain untouched. Use when user says "ghost on", "ghost off", "incognito", "private mode", "privacy mode", or wants a conversation that leaves no persistent trace in agent memory.
-metadata:
-  openclaw:
-    requires:
-      env:
-        - OPENCLAW_WORKSPACE
-        - OPENCLAW_HOME
-        - OPENCLAW_AGENT
-      bins:
-        - python3
-        - shred
+requires:
+  env:
+    - OPENCLAW_WORKSPACE
+    - OPENCLAW_HOME
+    - OPENCLAW_AGENT
+  bins:
+    - python3
+    - shred
+install:
+  scripts:
+    - scripts/ghost_mode.sh
+    - scripts/ghost_registry.py
+    - scripts/ghost_archive.py
+    - scripts/ghost_scrub.py
+    - scripts/ghost_verify.py
+    - scripts/ghost_index_cleanup.py
 ---
 
 # Ghost Mode

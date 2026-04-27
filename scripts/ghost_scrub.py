@@ -51,6 +51,7 @@ def scrub_daily_logs(ghost_start, ghost_end):
         if not DAILY_LOG_PATTERN.match(log_file.name):
             continue
 
+        validate_path(log_file)
         with open(log_file) as f:
             lines = f.readlines()
 
@@ -101,6 +102,7 @@ def scrub_daily_logs(ghost_start, ghost_end):
 
 def scrub_file_by_mtime(file_path, ghost_start, ghost_end):
     """Scrub entries from a memory file based on mtime and content timestamps."""
+    validate_path(file_path)
     mtime = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
 
     # Only scrub if the file was modified during the ghost window
@@ -169,6 +171,7 @@ def scrub_memory_md(ghost_start, ghost_end, session_ids):
     if not memory_file.exists():
         return False
 
+    validate_path(memory_file)
     with open(memory_file) as f:
         content = f.read()
 
