@@ -19,11 +19,33 @@ OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw"))
 # Path validation: ensure critical directories exist within expected workspace structure
 ALLOWED_PREFIXES = [str(WORKSPACE), str(OPENCLAW_HOME)]
 
+_USER_HOME = str(Path.home())
+
+
+def _check_prefix_safety():
+    """Verify that configured workspace/home paths are within the user's home directory.
+
+    This prevents misconfigured env vars (e.g. OPENCLAW_HOME=/tmp or OPENCLAW_HOME=/)
+    from silently expanding the scope of destructive operations to unintended locations.
+    Raises RuntimeError at import time if misconfigured.
+    """
+    for prefix in ALLOWED_PREFIXES:
+        resolved = str(Path(prefix).resolve())
+        if not (resolved == _USER_HOME or resolved.startswith(_USER_HOME + "/")):
+            raise RuntimeError(
+                f"Safety check failed: {prefix!r} resolves to {resolved!r}, which is "
+                f"outside the user home directory ({_USER_HOME}). "
+                f"Check OPENCLAW_WORKSPACE and OPENCLAW_HOME environment variables."
+            )
+
+
+_check_prefix_safety()
+
 
 def validate_path(path):
     """Validate that a path is within allowed workspace directories."""
     resolved = str(Path(path).resolve())
-    if not any(resolved.startswith(p) for p in ALLOWED_PREFIXES):
+    if not any(resolved == p or resolved.startswith(p + "/") for p in ALLOWED_PREFIXES):
         raise ValueError(f"Path {path} is outside allowed workspace directories")
     return Path(path)
 

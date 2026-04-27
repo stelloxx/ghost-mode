@@ -367,13 +367,14 @@ These are **optional** — the primary workflow is manual `ghost on` / `ghost of
 | Dry-run mode | `--dry-run` shows what would be deleted without making any changes. Configurable as default via `dry_run_by_default` |
 | User-triggered only | No automatic hooks. No passive collection. No daemons. Acts only when you run `ghost on`, `ghost off`, or `force-cleanup-all` |
 | Path validation | All file operations validate paths are within `OPENCLAW_WORKSPACE` or `OPENCLAW_HOME`. Session IDs are checked for path traversal. Operations outside these boundaries are rejected |
+| Env var safety check | At startup, the scripts verify that `OPENCLAW_WORKSPACE` and `OPENCLAW_HOME` resolve to paths within the user's home directory. If either is misconfigured to point at a broader location (e.g. `/`, `/tmp`), the scripts abort with an error before performing any operations |
 | Local only | No network calls. No API keys. No cloud services. Everything runs on your machine |
 
 **What's out of scope:** Gateway logs, OS process traces, third-party service logs. Ghost mode cleans what the agent controls — your workspace.
 
 ## Limitations
 
-- **Ghost mode is cooperative, not enforced at the OS level.** The `.ghost-mode` flag tells a *cooperating agent* to suppress memory writes. It cannot prevent other processes, scripts, or non-compliant agents from writing to the workspace. If you use tools or scripts that bypass the agent (e.g., direct file edits, cron jobs that write to memory files), those writes will still happen during a ghost session. The flag is a coordination mechanism — it works when the agent reads and respects it, which is the standard OpenClaw behavior documented in the AGENTS.md integration above.
+- **Ghost mode is cooperative, not enforced at the OS level.** Write suppression is implemented in the agent runtime — the agent checks for the `.ghost-mode` flag at session start and during the session, and skips memory writes when it is present. The scripts in this skill handle activation (writing the flag) and cleanup (scrubbing traces after deactivation); the runtime enforcement lives in your agent's AGENTS.md integration, not in these scripts. Other processes, scripts, or non-compliant agents that bypass the flag will still write to the workspace. The flag is a coordination mechanism — it works when the agent reads and respects it.
 
 - The OpenClaw gateway logs requests independently. Ghost mode cannot remove gateway logs.
 
