@@ -23,19 +23,25 @@ _USER_HOME = str(Path.home())
 
 
 def _check_prefix_safety():
-    """Verify that configured workspace/home paths are within the user's home directory.
+    """Verify that configured workspace/home paths are safe subdirectories.
 
-    This prevents misconfigured env vars (e.g. OPENCLAW_HOME=/tmp or OPENCLAW_HOME=/)
-    from silently expanding the scope of destructive operations to unintended locations.
+    Rules:
+    - Must resolve within the user's home directory (prevents /tmp, /, etc.)
+    - Must NOT be the home directory root itself (prevents OPENCLAW_HOME=$HOME,
+      which would allow destructive ops anywhere under ~)
+    - Must be at least one level below home (e.g. ~/.openclaw is fine, ~ is not)
+
     Raises RuntimeError at import time if misconfigured.
     """
     for prefix in ALLOWED_PREFIXES:
         resolved = str(Path(prefix).resolve())
-        if not (resolved == _USER_HOME or resolved.startswith(_USER_HOME + "/")):
+        # Must be within home
+        if not resolved.startswith(_USER_HOME + "/"):
             raise RuntimeError(
-                f"Safety check failed: {prefix!r} resolves to {resolved!r}, which is "
-                f"outside the user home directory ({_USER_HOME}). "
-                f"Check OPENCLAW_WORKSPACE and OPENCLAW_HOME environment variables."
+                f"Safety check failed: {prefix!r} resolves to {resolved!r}. "
+                f"OPENCLAW_WORKSPACE and OPENCLAW_HOME must be subdirectories of "
+                f"the user home directory ({_USER_HOME}), not the home root itself "
+                f"or a system path. Example: {_USER_HOME}/.openclaw"
             )
 
 

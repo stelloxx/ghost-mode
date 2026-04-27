@@ -2,13 +2,22 @@
 name: ghost-mode
 description: Browser-style incognito mode for your OpenClaw agent. Activate to pause all memory writes — when you deactivate, every trace of the session is securely scrubbed from logs, memory files, session transcripts, and search indexes. Like closing an incognito window: nothing persists. Any files or local outputs you independently create during the session remain untouched. Use when user says "ghost on", "ghost off", "incognito", "private mode", "privacy mode", or wants a conversation that leaves no persistent trace in agent memory.
 requires:
-  env:
-    - OPENCLAW_WORKSPACE
-    - OPENCLAW_HOME
-    - OPENCLAW_AGENT
   bins:
     - python3
-    - shred
+optional:
+  env:
+    - name: OPENCLAW_WORKSPACE
+      default: ~/.openclaw/workspace
+      description: OpenClaw workspace root. Must be a subdirectory of home, not home itself.
+    - name: OPENCLAW_HOME
+      default: ~/.openclaw
+      description: OpenClaw home directory. Must be a subdirectory of home, not home itself.
+    - name: OPENCLAW_AGENT
+      default: main
+      description: OpenClaw agent name (used to locate session files).
+  bins:
+    - name: shred
+      description: Secure file deletion. Falls back to rm if unavailable (with warning).
 install:
   scripts:
     - scripts/ghost_mode.sh
@@ -25,7 +34,7 @@ install:
 
 Activate, and the agent stops writing to memory. Deactivate, and every trace of the session — logs, memory files, session transcripts, search index entries — is securely scrubbed. Like closing an incognito browser window: the activity never happened, as far as the agent's memory is concerned.
 
-**What stays:** Any files or local outputs you independently create during the session (code, documents, images, etc.) are not touched. Ghost Mode only impacts the agent's memory and session history — nothing else.
+**What stays:** Any files or local outputs you independently create during the session (code, documents, images, etc.) are not touched — provided `OPENCLAW_WORKSPACE` and `OPENCLAW_HOME` are correctly scoped to your OpenClaw installation (not broadly set to `$HOME` or a parent directory). Ghost Mode only impacts the agent's memory and session history; the scripts enforce this scope at startup and will refuse to run if the env vars point too broadly.
 
 User-controlled, explicit, and auditable. No silent hooks, no background daemons, no automatic interception.
 
